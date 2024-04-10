@@ -770,7 +770,7 @@ export const register = ({ username, password }) =>
   client.post("/api/auth/register", { username, password });
 
 // 로그인 상태 확인
-export const check = () => client.post("/api/auth/check");
+export const check = () => client.get("/api/auth/check");
 ```
 
 #### 24.2.3.4 더 쉬운 API 요청 상태 관리
@@ -970,4 +970,924 @@ const INITIALIZE_FORM = "auth/INITIALIZE_FORM";
 const [REGISTER, REGISTER_SUCCESS, REGISTER_FAILURE] = createRequestActionTypes("auth/REGISTER");
 
 const [LOGIN, LOGIN_SUCCESS, LOGIN_FAILURE] = createRequestActionTypes("auth/LOGIN");
+```
+
+- createRequestSaga를 통해 API를 위한 사가를 생성하고,
+- 액션 생성 함수와 리듀서도 구현해보자
+- modules/auth.js
+
+```js
+import { produce } from "immer";
+import { createAction, handleActions } from "redux-actions";
+import { takeLatest } from "redux-saga/effects";
+import * as authAPI from "../lib/api/auth";
+import { createRequestActionTypes, createRequestSaga } from "../lib/createRequestSaga";
+
+// 액션 타입
+const CHANGE_FILED = "auth/CHANGE_FILED";
+const INITIALIZE_FORM = "auth/INITIALIZE_FORM";
+
+const [REGISTER, REGISTER_SUCCESS, REGISTER_FAILURE] = createRequestActionTypes("auth/REGISTER");
+
+const [LOGIN, LOGIN_SUCCESS, LOGIN_FAILURE] = createRequestActionTypes("auth/LOGIN");
+
+// 액션 생성 함수
+export const changeField = createAction(CHANGE_FILED, ({ form, key, value }) => ({
+  form, // register, login
+  key, // username, password, passwordConfirm
+  value, // 실제 바꾸려는 값
+}));
+export const initializeForm = createAction(INITIALIZE_FORM, form => form); // register / login
+
+export const register = createAction(REGISTER, ({ username, password }) => ({
+  username,
+  password,
+}));
+export const login = createAction(LOGIN, ({ username, password }) => ({ username, password }));
+// 사가 생성
+const registerSaga = createRequestSaga(REGISTER, authAPI.register);
+const loginSaga = createRequestSaga(LOGIN, authAPI.login);
+export function* authSaga() {
+  yield takeLatest(REGISTER, registerSaga);
+  yield takeLatest(LOGIN, loginSaga);
+}
+
+// 초기값
+const initState = {
+  register: {
+    username: "",
+    password: "",
+    passwordConfirm: "",
+  },
+  login: {
+    username: "",
+    password: "",
+  },
+  auth: null,
+  authError: null,
+};
+
+// 리듀서
+const auth = handleActions(
+  {
+    [CHANGE_FILED]: (state, { payload: { form, key, value } }) =>
+      produce(state, draft => {
+        draft[form][key] = value; // 예: state.register.username을 바꾼다.
+      }),
+    [INITIALIZE_FORM]: (state, { payload: form }) => ({
+      ...state,
+      [form]: initState[form],
+      authError: null, // 폼 전환 시 회원 인증 에러 초기화
+    }),
+    // 회원가입 성공
+    [REGISTER_SUCCESS]: (state, { payload: auth }) => ({
+      ...state,
+      authError: null,
+      auth,
+    }),
+    // 회원가입 실패
+    [REGISTER_FAILURE]: (state, { payload: error }) => ({
+      ...state,
+      authError: error,
+    }),
+    // 로그인 성공
+    [LOGIN_SUCCESS]: (state, { payload: auth }) => ({
+      ...state,
+      authError: null,
+      auth,
+    }),
+    // 로그인 실패
+    [LOGIN_FAILURE]: (state, { payload: error }) => ({
+      ...state,
+      authError: error,
+    }),
+  },
+  initState,
+);
+
+export default auth;
+```
+
+- 구현할 때 로딩에 관련된 상태는 이미 loading 리덕스 모듈에서 관리하므로,
+- 성공했을 때와 실패 했을 때의 상태에 대해서만 신경쓰면 된다.
+- 리덕스 모듈을 작성했으면 rootSaga를 만들어 주자.
+- modules/index.js
+
+```js
+import { combineReducers } from "redux";
+import auth, { authSaga } from "./auth";
+import loading from "./loading";
+import { all } from "redux-saga/effects";
+
+const rootReducer = combineReducers({
+  auth,
+  loading,
+});
+
+export function* rootSaga() {
+  yield all([authSaga()]);
+}
+
+export default rootReducer;
+```
+
+- 다음으로 스토어에 redux-saga 미들웨어 적용
+- src/index.js
+
+```js
+import "normalize.css";
+import ReactDOM from "react-dom/client";
+import { Provider } from "react-redux";
+import { BrowserRouter } from "react-router-dom";
+import { createStore, applyMiddleware } from "redux";
+import createSagaMiddleware from "redux-saga";
+import { composeWithDevTools } from "../node_modules/redux-devtools-extension/index";
+import App from "./App";
+import "./index.css";
+import rootReducer, { rootSaga } from "./modules/index";
+
+const sagaMiddleware = createSagaMiddleware();
+
+const store = createStore(rootReducer, composeWithDevTools(applyMiddleware(sagaMiddleware)));
+sagaMiddleware.run(rootSaga);
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(
+  <Provider store={store}>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </Provider>,
+);
+```
+
+### 24.2.4 회원가입 구현
+
+- containers/auth/RegisterForm.js
+
+```js
+import React, { useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { changeField, initializeForm, register } from "../../modules/auth";
+import AuthForm from "../../components/auth/AuthForm";
+
+const RegisterForm = () => {
+  const dispatch = useDispatch();
+  const { form, auth, authError } = useSelector(({ auth }) => ({
+    form: auth.register,
+    auth: auth.auth,
+    authError: auth.authError,
+  }));
+  // 인풋 변경 이벤트 핸들러
+  const onChange = e => {
+    const { value, name } = e.target;
+    dispatch(
+      changeField({
+        form: "register",
+        key: name,
+        value,
+      }),
+    );
+  };
+
+  // 폼 등록 이벤트 핸들러
+  const onSubmit = e => {
+    e.preventDefault();
+    const { username, password, passwordConfirm } = form;
+    if (password !== passwordConfirm) {
+      // TODO: 오류처리
+      return;
+    }
+    dispatch(register({ username, password }));
+  };
+
+  // 컴포넌트가 처음 렌더링될 때 form을 초기화함
+  useEffect(() => {
+    dispatch(initializeForm("register"));
+  }, [dispatch]);
+
+  // 회원가입 성공/실패 처리
+  useEffect(() => {
+    if (authError) {
+      console.log("오류 발생");
+      console.log(authError);
+      return;
+    }
+    if (auth) {
+      console.log("회원가입 성공");
+      console.log(auth);
+    }
+  }, [auth, authError]);
+
+  return <AuthForm type="register" form={form} onChange={onChange} onSubmit={onSubmit} />;
+};
+
+export default RegisterForm;
+```
+
+- 이제 사용자의 상태를 담을 user라는 리덕스 모듈을 만들어보자.
+- modules/user.js
+
+```js
+import { createAction, handleActions } from "redux-actions";
+import { takeLatest } from "redux-saga/effects";
+import * as authAPI from "../lib/api/auth";
+import { createRequestActionTypes, createRequestSaga } from "../lib/createRequestSaga";
+
+// 액션타입
+const TEMP_SET_USER = "user/TEMP_SET_USER"; // 새로고침 이후 임시 로그인 처리
+// 회원 정보 확인
+const [CHECK, CHECK_SUCCESS, CHECK_FAILURE] = createRequestActionTypes("user/CHECK");
+
+// 액션 생성함수
+export const tempSetUser = createAction(TEMP_SET_USER, user => user);
+export const check = createAction(CHECK);
+
+// 사가 생성
+const checkSaga = createRequestSaga(CHECK, authAPI.check);
+export function* userSaga() {
+  yield takeLatest(CHECK, checkSaga);
+}
+
+// 초기값
+const initState = {
+  user: null,
+  checkError: null,
+};
+
+// 리듀서
+export default handleActions(
+  {
+    [TEMP_SET_USER]: (state, { payload: user }) => ({
+      ...state,
+      user,
+    }),
+    [CHECK_SUCCESS]: (state, { payload: user }) => ({
+      ...state,
+      user,
+      checkError: null,
+    }),
+    [CHECK_FAILURE]: (state, { payload: error }) => ({
+      ...state,
+      user: null,
+      checkError: error,
+    }),
+  },
+  initState,
+);
+```
+
+- 루트 리듀서에 모듈 포함 시키기
+- modules/index.js
+
+```js
+import { combineReducers } from "redux";
+import auth, { authSaga } from "./auth";
+import loading from "./loading";
+import { all } from "redux-saga/effects";
+import user, { userSaga } from "./user";
+
+const rootReducer = combineReducers({
+  auth,
+  loading,
+  user,
+});
+
+export function* rootSaga() {
+  yield all([authSaga(), userSaga()]);
+}
+
+export default rootReducer;
+```
+
+- 리덕스 모듈을 다 작성했으면, 회원가입 성공 후 check를 호출하여
+- 현재 사용자가 로그인 상태가 되었는지 확인 해보자.
+- containers/auth/RegisterForm.js
+
+```js
+import React, { useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { changeField, initializeForm, register } from "../../modules/auth";
+import AuthForm from "../../components/auth/AuthForm";
+import { check } from "../../modules/user";
+
+const RegisterForm = () => {
+  const dispatch = useDispatch();
+  const { form, auth, authError, user } = useSelector(({ auth, user }) => ({
+    form: auth.register,
+    auth: auth.auth,
+    authError: auth.authError,
+    user: user.user,
+  }));
+  // 인풋 변경 이벤트 핸들러
+  const onChange = e => {
+    const { value, name } = e.target;
+    dispatch(
+      changeField({
+        form: "register",
+        key: name,
+        value,
+      }),
+    );
+  };
+
+  // 폼 등록 이벤트 핸들러
+  const onSubmit = e => {
+    e.preventDefault();
+    const { username, password, passwordConfirm } = form;
+    if (password !== passwordConfirm) {
+      // TODO: 오류처리
+      return;
+    }
+    dispatch(register({ username, password }));
+  };
+
+  // 컴포넌트가 처음 렌더링될 때 form을 초기화함
+  useEffect(() => {
+    dispatch(initializeForm("register"));
+  }, [dispatch]);
+
+  // 회원가입 성공/실패 처리
+  useEffect(() => {
+    if (authError) {
+      console.log("오류 발생");
+      console.log(authError);
+      return;
+    }
+    if (auth) {
+      console.log("회원가입 성공");
+      console.log(auth);
+      dispatch(check());
+    }
+  }, [auth, authError, dispatch]);
+
+  // user 값이 잘 설정되었는지 확인
+  useEffect(() => {
+    if (user) {
+      console.log("check API 성공");
+      console.log(user);
+    }
+  }, [user]);
+
+  return <AuthForm type="register" form={form} onChange={onChange} onSubmit={onSubmit} />;
+};
+
+export default RegisterForm;
+```
+
+- 회원가입에 성공했다면 홈 화면으로 라우트를 이동
+- containers/auth/RegisterForm.js
+
+```js
+import React, { useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { changeField, initializeForm, register } from "../../modules/auth";
+import AuthForm from "../../components/auth/AuthForm";
+import { check } from "../../modules/user";
+import { useNavigate } from "react-router-dom";
+
+const RegisterForm = () => {
+  const dispatch = useDispatch();
+  const { form, auth, authError, user } = useSelector(({ auth, user }) => ({
+    form: auth.register,
+    auth: auth.auth,
+    authError: auth.authError,
+    user: user.user,
+  }));
+
+  const navigate = useNavigate();
+
+  // 인풋 변경 이벤트 핸들러
+  const onChange = e => {
+    const { value, name } = e.target;
+    dispatch(
+      changeField({
+        form: "register",
+        key: name,
+        value,
+      }),
+    );
+  };
+
+  // 폼 등록 이벤트 핸들러
+  const onSubmit = e => {
+    e.preventDefault();
+    const { username, password, passwordConfirm } = form;
+    if (password !== passwordConfirm) {
+      // TODO: 오류처리
+      return;
+    }
+    dispatch(register({ username, password }));
+  };
+
+  // 컴포넌트가 처음 렌더링될 때 form을 초기화함
+  useEffect(() => {
+    dispatch(initializeForm("register"));
+  }, [dispatch]);
+
+  // 회원가입 성공/실패 처리
+  useEffect(() => {
+    if (authError) {
+      console.log("오류 발생");
+      console.log(authError);
+      return;
+    }
+    if (auth) {
+      console.log("회원가입 성공");
+      console.log(auth);
+      dispatch(check());
+    }
+  }, [auth, authError, dispatch]);
+
+  // user 값이 잘 설정되었는지 확인
+  useEffect(() => {
+    if (user) {
+      navigate("/"); // 홈 화면으로 이동
+    }
+  }, [navigate, user]);
+
+  return <AuthForm type="register" form={form} onChange={onChange} onSubmit={onSubmit} />;
+};
+
+export default RegisterForm;
+```
+
+### 24.2.5 로그인 구현
+
+- containers/auth/LoginForm.js
+
+```js
+import React, { useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { changeField, initializeForm, login } from "../../modules/auth";
+import AuthForm from "../../components/auth/AuthForm";
+import { check } from "../../modules/user";
+import { useNavigate } from "react-router-dom";
+
+const LoginForm = () => {
+  const dispatch = useDispatch();
+  const { form, auth, authError, user } = useSelector(({ auth, user }) => ({
+    form: auth.login,
+    auth: auth.auth,
+    authError: auth.authError,
+    user: user.user,
+  }));
+
+  const navigate = useNavigate();
+
+  // 인풋 변경 이벤트 핸들러
+  const onChange = e => {
+    const { value, name } = e.target;
+    dispatch(
+      changeField({
+        form: "login",
+        key: name,
+        value,
+      }),
+    );
+  };
+
+  // 폼 등록 이벤트 핸들러
+  const onSubmit = e => {
+    e.preventDefault();
+    const { username, password } = form;
+    dispatch(login({ username, password }));
+  };
+
+  // 컴포넌트가 처음 렌더링될 때 form을 초기화함
+  useEffect(() => {
+    dispatch(initializeForm("login"));
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (authError) {
+      console.log("오류 발생");
+      console.log(authError);
+      return;
+    }
+    if (auth) {
+      console.log("로그인 성공");
+      dispatch(check());
+    }
+  }, [auth, authError, dispatch]);
+
+  useEffect(() => {
+    if (user) {
+      navigate("/");
+    }
+  }, [navigate, user]);
+
+  return <AuthForm type="login" form={form} onChange={onChange} onSubmit={onSubmit} />;
+};
+
+export default LoginForm;
+```
+
+### 24.2.6 회원 인증 에러 처리하기
+
+- 요청이 실패했을 때 에러 메시지를 보여 주는 UI를 만들어보자
+- components/auth/AuthForm.js
+
+```js
+import styled from "@emotion/styled";
+import { Link } from "react-router-dom";
+import palette from "../../lib/styles/pallete";
+import Button from "../common/Button";
+
+// 회원가입 또는 로그인 폼을 보여준다.
+
+const StyledAuthForm = styled.div`
+  h3 {
+    margin: 0;
+    color: ${palette.gray[8]};
+    margin-bottom: 1rem;
+  }
+`;
+
+// 스타일링 된 input
+const StyledInput = styled.input`
+  font-size: 1rem;
+  border: none;
+  border-bottom: 1px solid ${palette.gray[5]};
+  padding-bottom: 0.5rem;
+  outline: none;
+  width: 100%;
+  &:focus {
+    color: $oc-teal-7;
+    border-bottom: 1px solid ${palette.gray[7]};
+  }
+  & + & {
+    margin-top: 1rem;
+  }
+`;
+
+// 폼 하단에 로그인 혹은 회원가입 링크를 보여 줌
+const Footer = styled.div`
+  margin-top: 2rem;
+  text-align: right;
+  a {
+    color: ${palette.gray[6]};
+    text-decoration: underline;
+    &:hover {
+      color: ${palette.gray[9]};
+    }
+  }
+`;
+
+const ButtonWithMarginTop = styled(Button)`
+  margin-top: 1rem;
+`;
+
+// 에러를 보여준다.
+const ErrorMessage = styled.div`
+  color: red;
+  text-align: center;
+  font-size: 0.875rem;
+  margin-top: 1rem;
+`;
+
+const textMap = {
+  login: "로그인",
+  register: "회원가입",
+};
+
+const AuthForm = ({ type, form, onChange, onSubmit, error }) => {
+  const text = textMap[type];
+  return (
+    <StyledAuthForm>
+      <h3>{text}</h3>
+      <form onSubmit={onSubmit}>
+        <StyledInput
+          autoComplete="username"
+          name="username"
+          placeholder="아이디"
+          onChange={onChange}
+          value={form.username}
+        />
+        <StyledInput
+          autoComplete="new-password"
+          name="password"
+          placeholder="비밀번호"
+          type="password"
+          onChange={onChange}
+          value={form.password}
+        />
+        {type === "register" && (
+          <StyledInput
+            autoComplete="new-password"
+            name="passwordConfirm"
+            placeholder="비밀번호 확인"
+            type="password"
+            onChange={onChange}
+            value={form.passwordConfirm}
+          />
+        )}
+        {error && <ErrorMessage>{error}</ErrorMessage>}
+        <ButtonWithMarginTop cyan fullWidth>
+          {text}
+        </ButtonWithMarginTop>
+      </form>
+      <Footer>
+        {type === "login" ? <Link to="/register">회원가입</Link> : <Link to="/login">로그인</Link>}
+      </Footer>
+    </StyledAuthForm>
+  );
+};
+
+export default AuthForm;
+```
+
+- AuthForm에서 에러를 보여 주기 위한 준비를 마침
+- 이제 상황에 따라 RegisterForm, LoginForm 컴포넌트에서 에러를 나타내 보자.
+
+- containers/auth/LoginForm.js
+
+```js
+import React, { useEffect, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { changeField, initializeForm, login } from "../../modules/auth";
+import AuthForm from "../../components/auth/AuthForm";
+import { check } from "../../modules/user";
+import { useNavigate } from "react-router-dom";
+
+const LoginForm = ({ history }) => {
+  const [error, setError] = useState(null);
+  const dispatch = useDispatch();
+  const { form, auth, authError, user } = useSelector(({ auth, user }) => ({
+    form: auth.login,
+    auth: auth.auth,
+    authError: auth.authError,
+    user: user.user,
+  }));
+
+  const navigate = useNavigate();
+
+  // 인풋 변경 이벤트 핸들러
+  const onChange = e => {
+    const { value, name } = e.target;
+    dispatch(
+      changeField({
+        form: "login",
+        key: name,
+        value,
+      }),
+    );
+  };
+
+  // 폼 등록 이벤트 핸들러
+  const onSubmit = e => {
+    e.preventDefault();
+    const { username, password } = form;
+    dispatch(login({ username, password }));
+  };
+
+  // 컴포넌트가 처음 렌더링될 때 form을 초기화함
+  useEffect(() => {
+    dispatch(initializeForm("login"));
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (authError) {
+      console.log("오류 발생");
+      console.log(authError);
+      setError("로그인 실패");
+      return;
+    }
+    if (auth) {
+      console.log("로그인 성공");
+      dispatch(check());
+    }
+  }, [auth, authError, dispatch]);
+
+  useEffect(() => {
+    if (user) {
+      navigate("/");
+    }
+  }, [navigate, user]);
+
+  return (
+    <AuthForm type="login" form={form} onChange={onChange} onSubmit={onSubmit} error={error} />
+  );
+};
+
+export default LoginForm;
+```
+
+- 이번에는 회원가입 시 발생하는 에러를 처리해 보자.
+- 회원가입은 에러 처리가 조금 까다롭다.
+
+  - username, password, passwordConfirm 중 하나라도 비었을 때
+  - password 와 passwordConfirm 값이 일치하지 않을 때
+  - username 이 중복될 때
+
+- containers/auth/RegisterForm.js
+
+```js
+import React, { useEffect, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { changeField, initializeForm, register } from "../../modules/auth";
+import AuthForm from "../../components/auth/AuthForm";
+import { check } from "../../modules/user";
+import { useNavigate } from "react-router-dom";
+
+const RegisterForm = () => {
+  const [error, setError] = useState(null);
+  const dispatch = useDispatch();
+  const { form, auth, authError, user } = useSelector(({ auth, user }) => ({
+    form: auth.register,
+    auth: auth.auth,
+    authError: auth.authError,
+    user: user.user,
+  }));
+
+  const navigate = useNavigate();
+
+  // 인풋 변경 이벤트 핸들러
+  const onChange = e => {
+    const { value, name } = e.target;
+    dispatch(
+      changeField({
+        form: "register",
+        key: name,
+        value,
+      }),
+    );
+  };
+
+  // 폼 등록 이벤트 핸들러
+  const onSubmit = e => {
+    e.preventDefault();
+    const { username, password, passwordConfirm } = form;
+    // 하나라도 비어 있다면
+    if ([username, password, passwordConfirm].includes("")) {
+      setError("빈 칸을 모두 입력하세요.");
+      return;
+    }
+    // 비밀번호가 일치하지 않는다면
+    if (password !== passwordConfirm) {
+      setError("비밀번호가 일치하지 않습니다.");
+      dispatch(changeField({ form: "register", key: "password", value: "" }));
+      dispatch(changeField({ form: "register", key: "passwordConfirm", value: "" }));
+      return;
+    }
+    dispatch(register({ username, password }));
+  };
+
+  // 컴포넌트가 처음 렌더링될 때 form을 초기화함
+  useEffect(() => {
+    dispatch(initializeForm("register"));
+  }, [dispatch]);
+
+  // 회원가입 성공/실패 처리
+  useEffect(() => {
+    if (authError) {
+      // 계정명이 이미 존재할 때
+      if (authError.response.status === 409) {
+        setError("이미 존재하는 계정명입니다.");
+        return;
+      }
+      // 기타 이유
+      setError("회원가입 실패");
+      return;
+    }
+    if (auth) {
+      console.log("회원가입 성공");
+      console.log(auth);
+      dispatch(check());
+    }
+  }, [auth, authError, dispatch]);
+
+  // user 값이 잘 설정되었는지 확인
+  useEffect(() => {
+    if (user) {
+      navigate("/"); // 홈 화면으로 이동
+    }
+  }, [navigate, user]);
+
+  return (
+    <AuthForm type="register" form={form} onChange={onChange} onSubmit={onSubmit} error={error} />
+  );
+};
+
+export default RegisterForm;
+```
+
+## 24.3 헤더 컴포넌트 생성 및 로그인 유지
+
+- 헤더 컴포넌트를 구현하고, 로그인 후에 새로고침을 해도 로그인이 유지되는 기능을 만들어보자.
+
+### 24.3.1 헤더 컴포넌트 만들기
+
+- 헤더 컴포넌트를 만들기 전에 Responsive라는 컴포넌트를 작성하자, 반응형 디자인을 할 때 더 편하게 작업하기 위함
+- Responsive 컴포넌트는 추후 다양한 컴포넌트에서 사용할 수 있기 때문에 common 디렉토리로 분류
+
+- components/common/Responsive.js
+
+```js
+import React from "react";
+import styled from "@emotion/styled";
+
+const StyledResponsive = styled.div`
+  padding-left: 1rem;
+  padding-right: 1rem;
+  width: 1024px;
+  margin: 0 auth; // 중앙 정렬
+
+  // 브라우저 크기에 따라 가로 크기 변경
+  @media (max-width: 1024px) {
+    width: 768px;
+  }
+  @media (max-width: 768px) {
+    width: 100%;
+  }
+`;
+
+const Responsive = ({ children, ...rest }) => {
+  // style, className, onClick, onMouseMove 등의 props를 사용할 수 있도록
+  // ...rest를 사용하여 StyledResponsive에게 전달
+  return <StyledResponsive {...rest}>{children}</StyledResponsive>;
+};
+
+export default Responsive;
+```
+
+- 이제 Header 컴포넌트를 만들자.
+- 포스트 페이지, 포스트 목록 페이지에서 사용되기 때문에 common 디렉토리에 작성하자.
+- components/common/Header.js
+
+```js
+import React from "react";
+import styled from "@emotion/styled";
+import Responsive from "./Responsive";
+import Button from "./Button";
+
+const StyledHeader = styled.div`
+  position: fixed;
+  width: 100%;
+  background: white;
+  box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.08);
+`;
+
+// Responsive 컴포넌트의 속성에 스타일을 추가해서 새로운 컴포넌트 생성
+const Wrapper = styled(Responsive)`
+  height: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  .logo {
+    font-size: 1.125rem;
+    font-weight: 800;
+    letter-spacing: 2px;
+  }
+  .right {
+    display: flex;
+    align-items: center;
+  }
+`;
+
+// 헤더가 fixed로 되어 있기 때문에 페이지의 콘텐츠가 4rem 아래에 나타나도록 해 주는 컴포넌트
+const Spacer = styled.div`
+  height: 4rem;
+`;
+
+const Header = () => {
+  return (
+    <>
+      <StyledHeader>
+        <Wrapper>
+          <div className="logo">REACTERS</div>
+          <div className="right">
+            <Button>로그인</Button>
+          </div>
+        </Wrapper>
+      </StyledHeader>
+      <Spacer />
+    </>
+  );
+};
+
+export default Header;
+```
+
+- 헤더 컴포넌트가 언제나 페이지 상단에 떠 있도록 postion 값을 fixed로 설정했다.
+- 그런데 헤더 컴포넌트 하단에 나오는 콘텐츠가 헤더의 위치와 겹치게 된다
+- 그래서 Spacer라는 컴포넌트를 만들어서 헤더 크기만큼 공간을 차지하도록 했다.
+- 이제 PostListPage에서 렌더링 해보자.
+
+- pages/PostListPage.js
+
+```js
+import React from "react";
+import Header from "../components/common/Header";
+
+const PostListPage = () => {
+  return (
+    <>
+      <Header />
+      <div>안녕하세요.</div>
+    </>
+  );
+};
+
+export default PostListPage;
 ```
