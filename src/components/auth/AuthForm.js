@@ -43,22 +43,52 @@ const Footer = styled.div`
   }
 `;
 
-const AuthForm = () => {
+const ButtonWithMarginTop = styled(Button)`
+  margin-top: 1rem;
+`;
+
+const textMap = {
+  login: "로그인",
+  register: "회원가입",
+};
+
+const AuthForm = ({ type, form, onChange, onSubmit }) => {
+  const text = textMap[type];
   return (
     <StyledAuthForm>
-      <h3>로그인</h3>
-      <form>
-        <StyledInput autoComplete="username" name="username" placeholder="아이디" />
+      <h3>{text}</h3>
+      <form onSubmit={onSubmit}>
+        <StyledInput
+          autoComplete="username"
+          name="username"
+          placeholder="아이디"
+          onChange={onChange}
+          value={form.username}
+        />
         <StyledInput
           autoComplete="new-password"
           name="password"
           placeholder="비밀번호"
           type="password"
+          onChange={onChange}
+          value={form.password}
         />
-        <Button>로그인</Button>
+        {type === "register" && (
+          <StyledInput
+            autoComplete="new-password"
+            name="passwordConfrim"
+            placeholder="비밀번호 확인"
+            type="password"
+            onChange={onChange}
+            value={form.passwordConfirm}
+          />
+        )}
+        <ButtonWithMarginTop cyan fullWidth>
+          {text}
+        </ButtonWithMarginTop>
       </form>
       <Footer>
-        <Link to="/register">회원가입</Link>
+        {type === "login" ? <Link to="/register">회원가입</Link> : <Link to="/login">로그인</Link>}
       </Footer>
     </StyledAuthForm>
   );
