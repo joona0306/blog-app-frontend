@@ -1,200 +1,147 @@
-# 블로그 앱 프론트엔드
+## 24.2 회원가입과 로그인 구현
 
-## 24.1 작업 환경 준비하기
+### 24.2.1 UI 준비하기
 
-- `yarn create react-app`
+- 프레젠테이션 컴포넌트는 components 폴더에 작성하고
+- 그 안에 기능별로 폴더(디렉토리)를 새로 만들어서 컴포넌트를 분류하자
+- 회원 인증에 관련된 컴포넌트는 회원 인증 페이지에서만 사용되기 때문에 auth 라는 디렉토리를 만들어서 작성
+- 회원가입과 로그인 기능을 구현하기 위해 만들어야 할 프레젠테이션 컴포넌트 두 개를 만들자
 
-### 24.1.1 설정 파일 만들기
-
-### 24.1.2 라우터 적용
-
-- 프로젝트를 처음 만들고 나서 설계를 시작할 때 가장 먼저 리액트 라우터를 설치 및 적용해보자.
-
-- `yarn add react-router-dom`
-
-- src/pages에 라우트 컴포넌트 생성
-
-  - LoginPage.js - 로그인
-  - RegisterPage.js - 회원가입
-  - WritePage.js - 글쓰기
-  - PostPage.js - 포스트 읽기
-  - PostListPage.js - 포스트 목록
-
-- 라우트 컴포넌트를 src/index.js 에서 BrowserRouter로 App을 감싸준다.
+- components/auth/AuthForm.js
 
 ```js
-import "normalize.css";
 import React from "react";
-import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
-import App from "./App";
-import "./index.css";
+import styled from "@emotion/styled";
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(
-  <BrowserRouter>
-    <App />
-  </BrowserRouter>,
-);
+// 회원가입 또는 로그인 폼을 보여준다.
+
+const StyledAuthForm = styled.div``;
+
+const AuthForm = () => {
+  return <StyledAuthForm>AuthForm</StyledAuthForm>;
+};
+
+export default AuthForm;
 ```
 
-- src/App.js 컴포넌트에서 Route 컴포넌트를 사용하여 각 라우트의 경로를 지정
+- components/auth/AuthTemplate.js
 
 ```js
-import { Route, Routes } from "react-router-dom";
-import PostListPage from "./pages/PostListPage";
-import RegisterPage from "./pages/RegisterPage";
-import LoginPage from "./pages/LoginPage";
-import WritePage from "./pages/WritePage";
-import PostPage from "./pages/PostPage";
+import React from "react";
+import styled from "@emotion/styled";
 
-function App() {
-  return (
-    <Routes>
-      <Route path="/" element={<PostListPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/write" element={<WritePage />} />
-      {/* "/:username 형태는 http://localhost:3000/test 경로에서 test를 username파라미터로 읽을 수 있게 해줌" */}
-      <Route path="/:username">
-        {/* username URL 파라미터가 주어졌을 때 특정 사용자가 작성한 포스트의 목록을 보여준다. */}
-        <Route index element={<PostListPage />} />
-        <Route path=":postId" element={<PostPage />} />
-      </Route>
-    </Routes>
-  );
-}
+// 회원가입/로그인 페이지의 레이아웃을 담당하는 컴포넌트
 
-export default App;
+const StyledAuthTemplate = styled.div``;
+
+const AuthTemplate = ({ children }) => {
+  return <StyledAuthTemplate>{children}</StyledAuthTemplate>;
+};
+
+export default AuthTemplate;
 ```
 
-### 24.1.3 스타일 설정
+- LoginPage와 RegisterPage에 렌더링
+- pages/LoginPage.js
 
-- 색상을 사용할 때 쉽게 뽑아서 쓸 수 있도록 색상 팔레트 파일을 만든다.
-- src/lib/styles/pallete.js
+```js
+import React from "react";
+import AuthForm from "../components/auth/AuthForm";
+import AuthTemplate from "../components/auth/AuthTemplate";
 
-### 24.1.4 Button 컴포넌트 만들기
+const LoginPage = () => {
+  return (
+    <AuthTemplate>
+      <AuthForm />
+    </AuthTemplate>
+  );
+};
 
-- 버튼 컴포넌트는 다양한 곳에서 재사용할 예정
-- src/components/common/Button.js
+export default LoginPage;
+```
+
+- pages/RegisterPage.js
+
+```js
+import React from "react";
+import AuthForm from "../components/auth/AuthForm";
+import AuthTemplate from "../components/auth/AuthTemplate";
+
+const RegisterPage = () => {
+  return (
+    <AuthTemplate>
+      <AuthForm />
+    </AuthTemplate>
+  );
+};
+
+export default RegisterPage;
+```
+
+#### 24.2.1.1 AuthTemplate 완성하기
+
+- AuthTemplate 컴포넌트는 children으로 받아 온 내용을 보여주기만 하는 역할
+- components/auth/AuthTemplate.js
 
 ```js
 import React from "react";
 import styled from "@emotion/styled";
 import palette from "../../lib/styles/pallete";
+import { Link } from "react-router-dom";
 
-const StyledButton = styled.button`
-  border: none;
-  border-radius: 4px;
-  font-size: 1rem;
-  font-weight: bold;
-  padding: 0.25rem 1rem;
-  color: white;
-  outline: none;
-  cursor: pointer;
+// 회원가입/로그인 페이지의 레이아웃을 담당하는 컴포넌트
 
-  background: ${palette.gray[8]};
-  &:hover {
-    background: ${palette.gray[6]};
-  }
+// 화면 전체를 채움
+const StyledAuthTemplate = styled.div`
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  background: ${palette.gray[2]};
+  /* flex로 내부 내용 중앙 정렬 */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 `;
 
-const Button = props => {
-  return <StyledButton {...props} />;
-};
+// 흰색 박스
+const WhiteBox = styled.div`
+  .logo-area {
+    display: block;
+    padding-bottom: 2rem;
+    text-align: center;
+    font-weight: bold;
+    letter-spacing: 2px;
+  }
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.025);
+  padding: 2rem;
+  width: 360px;
+  background: white;
+  border-radius: 2px;
+`;
 
-export default Button;
-```
-
-- pages/PostListPage.js 에서 렌더링 해보기
-
-```js
-import React from "react";
-import Button from "../components/common/Button";
-
-const PostListPage = () => {
+const AuthTemplate = ({ children }) => {
   return (
-    <div>
-      포스트 목록 페이지
-      <Button>버튼</Button>
-    </div>
+    <StyledAuthTemplate>
+      <WhiteBox>
+        <div className="logo-area">
+          <Link to="/">REACTERS</Link>
+        </div>
+        {children}
+      </WhiteBox>
+    </StyledAuthTemplate>
   );
 };
 
-export default PostListPage;
+export default AuthTemplate;
 ```
 
-### 24.1.5 리덕스 적용
+#### 24.2.1.2 AuthForm 완성하기
 
-- `yarn add redux`
-- `yarn add react-redux`
-- `yarn add redux-actions`
-- `yarn add immer`
-- `yarn add redux-devtools-extension`
-- Ducks 패턴을 사용하여 액션 타입, 액션 생성 함수, 리듀서가 하나의 파일에 다 정의되어 있는 리덕스 모듈을 작성할 예정
-- 일단 틀만 만들어 놓자.
-
-- src/modules/auth.js
+- components/auth/AuthForm.js
 
 ```js
-import { createAction, handleActions } from "redux-actions";
 
-// 액션 타입
-const SAMPLE_ACTION = "auth/SAMPLE_ACTION";
-
-// 액션 생성 함수
-export const sampleAction = createAction(SAMPLE_ACTION);
-
-// 초기값
-const initState = {};
-
-// 리듀서
-const auth = handleActions(
-  {
-    [SAMPLE_ACTION]: (state, action) => state,
-  },
-  initState,
-);
-
-export default auth;
-```
-
-- 루트 리듀서 만들기
-- src/modules/index.js
-
-```js
-import { combineReducers } from "redux";
-import auth from "./auth";
-
-const rootReducer = combineReducers({
-  auth,
-});
-
-export default rootReducer;
-```
-
-- 루트 리듀서를 만든 후에 프로젝트의 엔트리 파일 index.js에서 스토어를 생성하고 Provider를 통해 리액트 프로젝트에 리덕스 적용
-- src/index.js
-
-```js
-import "normalize.css";
-import ReactDOM from "react-dom/client";
-import { Provider } from "react-redux";
-import { BrowserRouter } from "react-router-dom";
-import { createStore } from "redux";
-import { composeWithDevTools } from "../node_modules/redux-devtools-extension/index";
-import App from "./App";
-import "./index.css";
-import rootReducer from "./modules/index";
-
-const store = createStore(rootReducer, composeWithDevTools());
-
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(
-  <Provider store={store}>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
-  </Provider>,
-);
 ```
