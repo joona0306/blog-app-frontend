@@ -1,14 +1,3 @@
-# 25. 글쓰기 기능 구현하기
-
-## 25.1 에디터 UI 구현하기
-
-- Quill 에디터 라이브러리 사용
-- 제목은 input, 내용은 Quill 에디터 사용
-- `yarn add quill`
-
-- components/write/Editor.js
-
-```js
 import styled from "@emotion/styled";
 import Quill from "quill";
 import "quill/dist/quill.bubble.css";
@@ -75,29 +64,3 @@ const Editor = () => {
 };
 
 export default Editor;
-```
-
-- 외부 라이브러리를 연동할 때는 useRef와 useEffect를 적절하게 사용하면 된다.
-- Editor 컴포넌트를 WritePage에 렌더링하자.
-- pages/WritePage.js
-
-```js
-import React from "react";
-import Responsive from "../components/common/Responsive";
-import Editor from "../components/write/Editor";
-
-const WritePage = () => {
-  return (
-    <Responsive>
-      <Editor />
-    </Responsive>
-  );
-};
-
-export default WritePage;
-```
-
-## 25.2 TagBox 만들기
-
-- 태그를 추가하는 컴포넌트 이름을 TagBox라고 하겠다.
-- components/write/TagBox.js

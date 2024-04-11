@@ -8,10 +8,10 @@ const StyledResponsive = styled.div`
   margin: 0 auth; // 중앙 정렬
 
   // 브라우저 크기에 따라 가로 크기 변경
-  @media (max-width: 1024px) {
-    width: 768px;
+  @media (max-width: 1920px) {
+    width: 100%;
   }
-  @media (max-width: 768px) {
+  @media (max-width: 1024px) {
     width: 100%;
   }
 `;
