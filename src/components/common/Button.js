@@ -2,8 +2,29 @@ import styled from "@emotion/styled";
 import React from "react";
 import palette from "../../lib/styles/pallete";
 import { css } from "@emotion/react";
+import { Link } from "react-router-dom";
 
-const StyledButton = styled.button`
+// fullWidth 스타일 함수
+const fullWidthStyle = props =>
+  props.fullWidth &&
+  css`
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+    width: 100%;
+    font-size: 1.125rem;
+  `;
+
+// cyan 스타일 함수
+const cyanStyle = props =>
+  props.cyan &&
+  css`
+    background: ${palette.cyan[5]};
+    &:hover {
+      background: ${palette.cyan[4]};
+    }
+  `;
+
+const buttonStyle = css`
   border: none;
   border-radius: 4px;
   font-size: 1rem;
@@ -17,28 +38,22 @@ const StyledButton = styled.button`
   &:hover {
     background: ${palette.gray[6]};
   }
+`;
 
-  ${props =>
-    props.fullWidth &&
-    css`
-      padding-top: 0.75rem;
-      padding-bottom: 0.75rem;
-      width: 100%;
-      font-size: 1.125rem;
-    `}
+const StyledButton = styled.button`
+  ${buttonStyle};
+  ${fullWidthStyle};
+  ${cyanStyle};
+`;
 
-  ${props =>
-    props.cyan &&
-    css`
-      background: ${palette.cyan[5]};
-      &:hover {
-        background: ${palette.cyan[4]};
-      }
-    `}
+const StyledLink = styled(Link)`
+  ${buttonStyle};
+  ${fullWidthStyle};
+  ${cyanStyle};
 `;
 
 const Button = props => {
-  return <StyledButton {...props} />;
+  return props.to ? <StyledLink {...props} cyan={props.cyan} /> : <StyledButton {...props} />;
 };
 
 export default Button;

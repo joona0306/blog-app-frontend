@@ -1891,3 +1891,462 @@ const PostListPage = () => {
 
 export default PostListPage;
 ```
+
+- 헤더 로그인 버튼을 누르면 /login 페이지로 이동해야 한다.
+- useNavigate 사용하는 방법 (교재 790p 참고)
+- Link 컴포넌트 사용하는 방법
+- components/common/Button.js
+
+```js
+import styled from "@emotion/styled";
+import React from "react";
+import palette from "../../lib/styles/pallete";
+import { css } from "@emotion/react";
+import { Link } from "react-router-dom";
+
+// fullWidth 스타일 함수
+const fullWidthStyle = props =>
+  props.fullWidth &&
+  css`
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+    width: 100%;
+    font-size: 1.125rem;
+  `;
+
+// cyan 스타일 함수
+const cyanStyle = props =>
+  props.cyan &&
+  css`
+    background: ${palette.cyan[5]};
+    &:hover {
+      background: ${palette.cyan[4]};
+    }
+  `;
+
+const buttonStyle = css`
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: bold;
+  padding: 0.25rem 1rem;
+  color: white;
+  outline: none;
+  cursor: pointer;
+
+  background: ${palette.gray[8]};
+  &:hover {
+    background: ${palette.gray[6]};
+  }
+`;
+
+const StyledButton = styled.button`
+  ${buttonStyle};
+  ${fullWidthStyle};
+  ${cyanStyle};
+`;
+
+const StyledLink = styled(Link)`
+  ${buttonStyle};
+  ${fullWidthStyle};
+  ${cyanStyle};
+`;
+
+const Button = props => {
+  return props.to ? <StyledLink {...props} cyan={props.cyan} /> : <StyledButton {...props} />;
+};
+
+export default Button;
+```
+
+### 24.3.2 로그인 상태를 보여 주고 유지하기
+
+- 로그인 페이지에서 로그인에 성공하면 헤더 컴포넌트에서 로그인 중인 상태를 보여주고,
+- 새로고침을 해도 이 상태가 유지되도록 해보자.
+
+#### 24.3.2.1 로그인 상태 보여주기
+
+- 먼저 헤더 컴포넌트에 리덕스를 연결시키자
+- containers/common/HeaderContainer.js
+
+```js
+import React from "react";
+import { useSelector } from "react-redux";
+import Header from "../../components/common/Header";
+
+const HeaderContainer = () => {
+  const { user } = useSelector(({ user }) => ({ user: user.user }));
+
+  return <Header user={user} />;
+};
+
+export default HeaderContainer;
+```
+
+- 헤더 컴포넌트에서 user 값이 주어질 경우 계정명과 로그아웃 버튼을 보여 주도록 수정
+- components/common/Header.js
+
+```js
+import React from "react";
+import styled from "@emotion/styled";
+import Responsive from "./Responsive";
+import Button from "./Button";
+import { Link } from "react-router-dom";
+
+const StyledHeader = styled.div`
+  position: fixed;
+  width: 100%;
+  background: white;
+  box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.08);
+`;
+
+// Responsive 컴포넌트의 속성에 스타일을 추가해서 새로운 컴포넌트 생성
+const Wrapper = styled(Responsive)`
+  height: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  .logo {
+    font-size: 1.125rem;
+    font-weight: 800;
+    letter-spacing: 2px;
+  }
+  .right {
+    display: flex;
+    align-items: center;
+  }
+`;
+
+// 헤더가 fixed로 되어 있기 때문에 페이지의 콘텐츠가 4rem 아래에 나타나도록 해 주는 컴포넌트
+const Spacer = styled.div`
+  height: 4rem;
+`;
+
+const UserInfo = styled.div`
+  font-weight: 800;
+  margin-left: 1rem;
+`;
+
+const Header = ({ user }) => {
+  return (
+    <>
+      <StyledHeader>
+        <Wrapper>
+          <Link to="/" className="logo">
+            REACTERS
+          </Link>
+          {user ? (
+            <div className="right">
+              <UserInfo>{user.username}</UserInfo>
+              <Button>로그아웃</Button>
+            </div>
+          ) : (
+            <div className="right">
+              <Button to="/login">로그인</Button>
+            </div>
+          )}
+        </Wrapper>
+      </StyledHeader>
+      <Spacer />
+    </>
+  );
+};
+
+export default Header;
+```
+
+- 다음으로 PostListPage에서 Header 컴포넌트를 HeaderContainer 로 대체
+- pages/PostListPage.js
+
+```js
+import React from "react";
+import HeaderContainer from "../containers/common/HeaderContainer";
+
+const PostListPage = () => {
+  return (
+    <>
+      <HeaderContainer />
+      <div>안녕하세요.</div>
+    </>
+  );
+};
+
+export default PostListPage;
+```
+
+#### 24.3.2.2 로그인 상태 유지하기
+
+- 로그인 상태를 유지하기 위해 브라우저에 내장되어 있는 localStorage를 사용
+- LoginForm, RegisterForm 수정
+- containers/auth/LoginForm.js
+
+```js
+// ...
+useEffect(() => {
+    if (user) {
+      navigate("/");
+      try {
+        localStorage.setItem("user", JSON.stringify(user));
+      } catch (error) {
+        console.log("localStorage is not working");
+      }
+    }
+  }, [navigate, user]);
+
+  return (
+    <AuthForm type="login" form={form} onChange={onChange} onSubmit={onSubmit} error={error} />
+  );
+};
+
+export default LoginForm;
+```
+
+- containers/auth/RegisterForm.js
+
+```js
+// ...
+useEffect(() => {
+    if (user) {
+      navigate("/"); // 홈 화면으로 이동
+      try {
+        localStorage.setItem("user", JSON.stringify(user));
+      } catch (error) {
+        console.log("localStorage is not working");
+      }
+    }
+  }, [navigate, user]);
+
+  return (
+    <AuthForm type="register" form={form} onChange={onChange} onSubmit={onSubmit} error={error} />
+  );
+};
+
+export default RegisterForm;
+```
+
+- src/index.js
+
+```js
+import "normalize.css";
+import ReactDOM from "react-dom/client";
+import { Provider } from "react-redux";
+import { BrowserRouter } from "react-router-dom";
+import { createStore, applyMiddleware } from "redux";
+import createSagaMiddleware from "redux-saga";
+import { composeWithDevTools } from "../node_modules/redux-devtools-extension/index";
+import App from "./App";
+import "./index.css";
+import rootReducer, { rootSaga } from "./modules/index";
+import { check, tempSetUser } from "./modules/user";
+
+const sagaMiddleware = createSagaMiddleware();
+
+const store = createStore(rootReducer, composeWithDevTools(applyMiddleware(sagaMiddleware)));
+
+function loadUser() {
+  try {
+    const user = localStorage.getItem("user");
+    if (!user) return; // 로그인 상태가 아니라면 아무것도 안 함
+    store.dispatch(tempSetUser(JSON.parse(user)));
+    store.dispatch(check());
+  } catch (error) {
+    console.log("localStorage is not working");
+  }
+}
+
+sagaMiddleware.run(rootSaga);
+loadUser();
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(
+  <Provider store={store}>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </Provider>,
+);
+```
+
+#### 24.3.2.3 로그인 검증 실패 시 정보 초기화
+
+- 로그인 정보가 만료되었을 때를 대비하여 사용자 정보를 초기화하는 작업을 해보자.
+- modules/user.js
+
+```js
+// ...
+// 사가 생성
+const checkSaga = createRequestSaga(CHECK, authAPI.check);
+
+function checkFailureSaga() {
+  try {
+    localStorage.removeItem("user"); // localStorage에서 user를 제거
+  } catch (error) {
+    console.log("localStorage is not working");
+  }
+}
+
+export function* userSaga() {
+  yield takeLatest(CHECK, checkSaga);
+  yield takeLatest(CHECK_FAILURE, checkFailureSaga);
+}
+//...
+```
+
+- 개발자 도구에서 쿠키를 삭제 후 새로고침하여 확인하기
+- 콘솔에 console.log(localStorage.user) 로 undefined 확인하기
+
+#### 24.3.2.4 로그아웃 기능 구현
+
+- 로그아웃 API를 호출하고, localStorage 안의 값을 없애 주면 된다.
+- lib/api/auth.js
+
+```js
+import client from "./client";
+
+// 로그인
+export const login = ({ username, password }) =>
+  client.post("/api/auth/login", { username, password });
+
+// 회원가입
+export const register = ({ username, password }) =>
+  client.post("/api/auth/register", { username, password });
+
+// 로그인 상태 확인
+export const check = () => client.get("/api/auth/check");
+
+// 로그아웃
+export const logout = () => client.post("/api/auth/logout");
+```
+
+- 이어서 LOGOUT 액션을 만들고, 이 액션이 디스패치되었을 때 API 호출 후
+- localStorage의 user 값을 지워준다.
+- 추가로 리듀서에서 스토어의 user 값을 null로 설정한다.
+- 로그아웃의 경우에는 성공/실패 여부가 중요하지 않으므로 LOGOUT_SUCCESS, FAILURE 액션은 만들지 않겠다.
+
+- modules/user.js
+
+```js
+import { createAction, handleActions } from "redux-actions";
+import { takeLatest, call } from "redux-saga/effects";
+import * as authAPI from "../lib/api/auth";
+import { createRequestActionTypes, createRequestSaga } from "../lib/createRequestSaga";
+
+// 액션타입
+const TEMP_SET_USER = "user/TEMP_SET_USER"; // 새로고침 이후 임시 로그인 처리
+// 회원 정보 확인
+const [CHECK, CHECK_SUCCESS, CHECK_FAILURE] = createRequestActionTypes("user/CHECK");
+const LOGOUT = "user/LOGOUT";
+
+// 액션 생성함수
+export const tempSetUser = createAction(TEMP_SET_USER, user => user);
+export const check = createAction(CHECK);
+export const logout = createAction(LOGOUT);
+
+// 사가 생성
+const checkSaga = createRequestSaga(CHECK, authAPI.check);
+
+function checkFailureSaga() {
+  try {
+    localStorage.removeItem("user"); // localStorage에서 user를 제거
+  } catch (error) {
+    console.log("localStorage is not working");
+  }
+}
+
+function* logoutSaga() {
+  try {
+    yield call(authAPI.logout); // logout API 호출
+    localStorage.removeItem("user"); // localStorage에서 user를 제거
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+export function* userSaga() {
+  yield takeLatest(CHECK, checkSaga);
+  yield takeLatest(CHECK_FAILURE, checkFailureSaga);
+  yield takeLatest(LOGOUT, logoutSaga);
+}
+
+// 초기값
+const initState = {
+  user: null,
+  checkError: null,
+};
+
+// 리듀서
+export default handleActions(
+  {
+    [TEMP_SET_USER]: (state, { payload: user }) => ({
+      ...state,
+      user,
+    }),
+    [CHECK_SUCCESS]: (state, { payload: user }) => ({
+      ...state,
+      user,
+      checkError: null,
+    }),
+    [CHECK_FAILURE]: (state, { payload: error }) => ({
+      ...state,
+      user: null,
+      checkError: error,
+    }),
+    [LOGOUT]: state => ({ ...state, user: null }),
+  },
+  initState,
+);
+```
+
+- 다 작성한 뒤에는 logout 액션 생성 함수를 디스패치하는 onLogout 함수를 만들어서
+- Header 컴포넌트에 전달해 주자.
+
+- containers/common/HeaderContainer.js
+
+```js
+import React from "react";
+import { useSelector, useDispatch } from "react-redux";
+import Header from "../../components/common/Header";
+import { logout } from "../../modules/user";
+
+const HeaderContainer = () => {
+  const { user } = useSelector(({ user }) => ({ user: user.user }));
+  const dispatch = useDispatch();
+  const onLogout = () => {
+    dispatch(logout());
+  };
+
+  return <Header user={user} onLogout={onLogout} />;
+};
+
+export default HeaderContainer;
+```
+
+- 그리고 Header 컴포넌트에서 **로그아웃** 버튼을 누르면 해당 함수가 호출되도록 하자.
+- components/common/Header.js
+
+```js
+const Header = ({ user, onLogout }) => {
+  return (
+    <>
+      <StyledHeader>
+        <Wrapper>
+          <Link to="/" className="logo">
+            REACTERS
+          </Link>
+          {user ? (
+            <div className="right">
+              <UserInfo>{user.username}</UserInfo>
+              <Button onClick={onLogout}>로그아웃</Button>
+            </div>
+          ) : (
+            <div className="right">
+              <Button to="/login">로그인</Button>
+            </div>
+          )}
+        </Wrapper>
+      </StyledHeader>
+      <Spacer />
+    </>
+  );
+};
+```
