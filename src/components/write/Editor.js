@@ -36,6 +36,7 @@ const Editor = ({ title, body, onChangeField }) => {
   const quillElement = useRef(null); // Quill을 적용할 DivElement를 설정
   const quillInstance = useRef(null); // Quill 인스턴스를 설정
 
+  // Quill 인스턴스 초기화
   useEffect(() => {
     quillInstance.current = new Quill(quillElement.current, {
       theme: "bubble",
@@ -61,6 +62,14 @@ const Editor = ({ title, body, onChangeField }) => {
       }
     });
   }, [onChangeField]);
+
+  // body 값이 변경될 때 Quill 에디터 반영
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (mounted.current) return;
+    mounted.current = true;
+    quillInstance.current.root.innerHTML = body;
+  }, [body]);
 
   const onChangeTitle = e => {
     onChangeField({ key: "title", value: e.target.value });
