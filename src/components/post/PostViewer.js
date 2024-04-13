@@ -7,6 +7,7 @@ import Tags from "../common/Tags";
 
 const PostViewerBlock = styled(Responsive)`
   margin-top: 4rem;
+  margin-bottom: 4rem;
 `;
 const PostHead = styled.div`
   border-bottom: 1px solid ${palete.gray[2]};

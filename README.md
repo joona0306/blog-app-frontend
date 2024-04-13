@@ -899,3 +899,413 @@ const PostListPage = () => {
 
 export default PostListPage;
 ```
+
+### 26.2.3 HTML 필터링 하기
+
+- sanitize-html 라이브러리를 사용해서 HTML을 필터링 해보자
+- HTML을 작성하고 보여 주어야 하는 서비스에서 유용하다.
+- 단순히 HTML을 제거하는 기능뿐만 아니라 특정 HTML만 허용하는 기능도 있기 때문에
+- 글쓰기 API에서 사용하면 손쉽게 악성 스크립트 삽입을 막을 수 있다.
+- blog-backend 디렉토리에서 작업
+- `yarn add sanitize-html`
+- src/api/posts/posts.ctrl.js
+
+```js
+const Post = require("../../models/post");
+const mongoose = require("mongoose");
+const Joi = require("joi");
+const sanitizeHtml = require("sanitize-html");
+
+const { ObjectId } = mongoose.Types;
+
+const sanitizeOption = {
+  allowedTags: ["h1", "h2", "b", "i", "u", "s", "p", "ul", "ol", "li", "blockquote", "a", "img"],
+  allowedAttributes: {
+    a: ["href", "name", "target"],
+    img: ["src"],
+    li: ["class"],
+  },
+  allowedSchemes: ["data", "http"],
+};
+
+exports.getPostById = async (ctx, next) => {
+  const { id } = ctx.params;
+  if (!ObjectId.isValid(id)) {
+    ctx.status = 400; // Bad Request
+    return;
+  }
+  try {
+    const post = await Post.findById(id);
+    // 포스트가 존재하지 않을 때
+    if (!post) {
+      ctx.status = 404; // Not Found
+      return;
+    }
+    ctx.state.post = post;
+    return next();
+  } catch (error) {
+    ctx.throw(500, error);
+  }
+};
+
+exports.checkOwnPost = (ctx, next) => {
+  const { user, post } = ctx.state;
+  // MongoDB에서 조회한 데이터의 id 값을 문자열과 비교할 때는
+  // 반드시 .toString()을 해주어야 한다.
+  if (post.user._id.toString() !== user._id) {
+    ctx.status = 403;
+    return;
+  }
+  return next();
+};
+
+/* 포스트 작성
+POST /api/posts
+{title, body}
+*/
+exports.write = async ctx => {
+  const schema = Joi.object().keys({
+    // 객체가 다음 필드를 가지고 있음을 검증
+    title: Joi.string().required(), // required()가 있으면 필수 항목
+    body: Joi.string().required(),
+    tags: Joi.array().items(Joi.string()).required(), // 문자열로 이루어진 배열
+  });
+
+  // 검증하고 나서 검증 실패인 경우 에러 처리
+  const result = schema.validate(ctx.request.body);
+  if (result.error) {
+    ctx.status = 400; // Bad Request
+    ctx.body = result.error;
+    return;
+  }
+
+  const { title, body, tags } = ctx.request.body;
+  // 포스트의 인스턴스를 만들 때는 new 키워드를 사용
+  // 그리고 생성자 함수의 파라미터에 정보를 지닌 객체럴 넣음
+  const post = new Post({
+    title,
+    body: sanitizeHtml(body, sanitizeOption),
+    tags,
+    user: ctx.state.user,
+  });
+  try {
+    // save()함수를 실행시켜야 데이터베이스에 저장
+    // 이 함수의 반환 값은 Promise이므로 async/await 문법으로
+    // 데이터베이스 저장 요청을 완료할 때까지 await를 사용하여 대기
+    // await를 사용할 때는 try/catch 문으로 오류를 처리
+    await post.save();
+    ctx.body = post;
+  } catch (error) {
+    ctx.throw(500, error);
+  }
+};
+
+const removeHtmlAndShorten = body => {
+  const filtered = sanitizeHtml(body, {
+    allowedTags: [],
+  });
+  return filtered.length < 200 ? filtered : `${filtered.slice(0, 200)}...`;
+};
+
+/* 포스트 목록 조회
+GET /api/posts?username=&tag=&page=
+*/
+exports.list = async ctx => {
+  // query는 문자열이기 때문에 숫자로 변환해 주어야 한다.
+  // 값이 주어지지 않았다면 1을 기본으로 사용한다.
+  const page = parseInt(ctx.query.page || "1", 10);
+
+  if (page < 1) {
+    ctx.status = 400;
+    return;
+  }
+
+  const { tag, username } = ctx.query;
+  // tag, username 값이 유효하면 객체 안에 넣고, 그렇지 않으면 넣지 않음
+  const query = {
+    ...(username ? { "user.username": username } : {}),
+    ...(tag ? { tags: tag } : {}),
+  };
+
+  try {
+    // find()함수를 호출한 후에는 exec()를 붙여 주어야 서버에 쿼리를 요청한다.
+    const posts = await Post.find(query)
+      .sort({ _id: -1 })
+      .limit(10)
+      .skip((page - 1) * 10)
+      .lean()
+      .exec();
+
+    const postCount = await Post.countDocuments(query).exec();
+
+    ctx.set("Last-Page", Math.ceil(postCount / 10));
+
+    ctx.body = posts.map(post => ({
+      ...post,
+      body: removeHtmlAndShorten(post.body),
+    }));
+  } catch (error) {
+    ctx.throw(500, error);
+  }
+};
+
+/* 특정 포스트 조회
+GET /api/posts/:id
+*/
+exports.read = ctx => {
+  ctx.body = ctx.state.post;
+};
+
+/* 특정 포스트 제거
+DELETE /api/posts/:id
+*/
+exports.remove = async ctx => {
+  const { id } = ctx.params;
+  // 해당 id를 가진 post가 몇 번째인지 확인한다.
+  try {
+    await Post.findByIdAndDelete(id).exec();
+    ctx.status = 204; // No Content (성공하기는 했지만 응답할 데이터는 없음)
+  } catch (error) {
+    ctx.throw(500, error);
+  }
+};
+
+/* 포스트 수정(특정 필드 변경)
+PATCH /api/posts/:id
+{
+  title: "수정",
+  body: "수정 내용",
+  tags: ["수정", "태그"]
+} 
+*/
+exports.update = async ctx => {
+  // PATCH 메서드는 주어진 필드만 교체한다.
+  const { id } = ctx.params;
+
+  // write에서 사용한 schema와 비슷하지만 required()가 없습니다.
+  const schema = Joi.object().keys({
+    title: Joi.string(),
+    body: Joi.string(),
+    tags: Joi.array().items(Joi.string()),
+  });
+
+  // 검증하고 나서 검증 실패인 경우 에러 처리
+  const result = schema.validate(ctx.request.body);
+  if (result.error) {
+    ctx.status = 400; // Bad Request
+    ctx.body = result.error;
+    return;
+  }
+
+  const nextData = { ...ctx.request.body }; // 객체를 복사하고
+  // body 값이 주어졌으면 HTML 필터링
+  if (nextData.body) {
+    nextData.body = sanitizeHtml(nextData.body, sanitizeOption);
+  }
+
+  try {
+    const post = await Post.findByIdAndUpdate(id, nextData, {
+      new: true, // 이 값을 설정하면 업데이트된 데이터를 반환한다.
+      // false 일 때는 업데이트되기 전의 데이터를 반환한다.
+    }).exec();
+    if (!post) {
+      ctx.status = 404;
+      return;
+    }
+    ctx.body = post;
+  } catch (error) {
+    ctx.throw(500, error);
+  }
+};
+```
+
+### 26.2.4 페이지네이션 구현하기
+
+- backend 디렉토리/ list API를 만들 때 마지막 페이지 번호를 HTTP 헤더를 통해 클라이언트에 전달하도록 설정했다.
+- createRequestSaga에서 SUCCESS 액션을 발생시킬 때 payload에 response.data 값만 넣어 주기 때문에
+- 현재 구조로는 헤더를 확인할 수 없다.
+- createRequestSaga를 수정해주자.
+- lib/createRequestSaga.js
+
+```js
+// ...
+// 사가를 실행할 제너레이터 함수를 반환, 이 함수는 action을 매개변수로 받는다.
+  return function* (action) {
+    // 요청 처리가 시작될 때, 로딩 상태를 시작하는 액션을 디스패치한다.
+    yield put(startLoading(type)); // 로딩시작
+    // 요청 처리를 시도
+    try {
+      // call 효과를 사용하여 request 함수를 호출한다.
+      // 이 때 액션의 payload를 매개변수로 전달한다.
+      // 요청 함수의 결과는 response 변수에 저장한다.
+      const response = yield call(request, action.payload);
+      // 요청이 성공적으로 처리되면, 결과 데이터와 함께 성공 액션을 디스패치한다.
+      yield put({
+        type: SUCCESS,
+        payload: response.data,
+        meta: response,
+      });
+// ...
+```
+
+- 이렇게 액션 안에 meta 값을 response로 넣어 주면 나중에 HTTP 헤더 및 상태 코드를 쉽게 조회할 수 있다.
+
+- posts 리덕스 모듈 수정
+- modules/posts.js
+
+```js
+// 초기값
+const initState = {
+  posts: null,
+  error: null,
+  lastPage: 1,
+};
+
+// 리듀서
+const posts = handleActions(
+  {
+    [LIST_POSTS_SUCCESS]: (state, { payload: posts, meta: response }) => ({
+      ...state,
+      posts,
+      lastPage: parseInt(response.headers["last-page"], 10), // 문자열을 숫자로 변환
+    }),
+    [LIST_POSTS_FAILURE]: (state, { payload: error }) => ({
+      ...state,
+      error,
+    }),
+  },
+  initState,
+);
+
+export default posts;
+```
+
+- 이제 리덕스 스토어 안에 마지막 페이지 번호를 lastPage라는 값으로 담아 둘 수 있다.
+- 페이지네이션을 위한 컴포넌트 Pagination 컴포넌트를 만들자.
+- URL 쿼리 문자열을 파싱하고, 문자열화하는데 사용되는 라이브러리
+- `yarn add qs`
+- components/post/Pagination.js
+
+```js
+import React from "react";
+import styled from "@emotion/styled";
+import qs from "qs";
+import Button from "../common/Button";
+
+const PaginationBlock = styled.div`
+  width: 320px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3rem;
+`;
+
+const PageNumber = styled.div``;
+
+const buildLink = ({ username, tag, page }) => {
+  const query = qs.stringify({ tag, page });
+  return username ? `/${username}?${query}` : `/?${query}`;
+};
+
+const Pagination = ({ page, lastPage, username, tag }) => {
+  return (
+    <PaginationBlock>
+      <Button
+        disabled={page === 1}
+        to={page === 1 ? undefined : buildLink({ username, tag, page: page - 1 })}
+      >
+        이전
+      </Button>
+      <PageNumber>{page}</PageNumber>
+      <Button
+        disabled={page === lastPage}
+        to={page === lastPage ? undefined : buildLink({ username, tag, page: page + 1 })}
+      >
+        다음
+      </Button>
+    </PaginationBlock>
+  );
+};
+
+export default Pagination;
+```
+
+- Button 컴포넌트에 비활성회된 스타일을 설정 :disabled CSS 셀렉터 사용
+- components/common/Button.js
+
+```js
+const buttonStyle = css`
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: bold;
+  padding: 0.25rem 1rem;
+  color: white;
+  outline: none;
+  cursor: pointer;
+
+  background: ${palette.gray[8]};
+  &:hover {
+    background: ${palette.gray[6]};
+  }
+
+  &:disabled {
+    background: ${palette.gray[3]};
+    color: ${palette.gray[5]};
+    cursor: not-allowed;
+  }
+`;
+```
+
+- PaginationContainer
+- containers/posts/PaginationContainer.js
+
+```js
+import React from "react";
+import Pagination from "../../components/post/Pagination";
+import { useSelector } from "react-redux";
+import { useParams, useSearchParams } from "react-router-dom";
+
+const PaginationContainer = () => {
+  const [searchParams] = useSearchParams();
+
+  const { username } = useParams();
+  const tag = searchParams.get("tag");
+  // page가 없으면 1을 기본값으로 사용
+  const page = parseInt(searchParams.get("page"), 10 || 1);
+
+  const { lastPage, posts, loading } = useSelector(({ posts, loading }) => ({
+    lastPage: posts.lastPage,
+    posts: posts.posts,
+    loading: loading["posts/LIST_POSTS"],
+  }));
+
+  // 포스트 뎅터가 없거나 로딩 중이면 아무것도 보여주지 않음
+  if (!posts || loading) return null;
+
+  return <Pagination tag={tag} username={username} page={parseInt(page, 10)} lastPage={lastPage} />;
+};
+
+export default PaginationContainer;
+```
+
+- pages/PostListPage.js
+
+```js
+import React from "react";
+import HeaderContainer from "../containers/common/HeaderContainer";
+import PostListContainer from "../containers/posts/PostListContainer";
+import PaginationContainer from "../containers/posts/PaginationContainer";
+
+const PostListPage = () => {
+  return (
+    <>
+      <HeaderContainer />
+      <PostListContainer />
+      <PaginationContainer />
+    </>
+  );
+};
+
+export default PostListPage;
+```
