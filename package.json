@@ -10,6 +10,7 @@
     "@testing-library/user-event": "^13.2.1",
     "axios": "^1.6.8",
     "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
     "immer": "^10.0.4",
     "normalize.css": "^8.0.1",
     "qs": "^6.12.1",
